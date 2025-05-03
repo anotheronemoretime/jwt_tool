@@ -135,6 +135,7 @@ def createConfig():
         'scanMode': '',
         'reqMode': '',
         'postData': '',
+        'getData': '',
         'resCode': '',
         'resSize': '',
         'resContent': ''}
@@ -147,9 +148,11 @@ def createConfig():
 
 @sleep_and_retry
 @limits(calls=DEFAULT_RATE_LIMIT, period=DEFAULT_RATE_PERIOD)
-def sendToken(token, cookiedict, track, headertoken="", postdata=None):
+def sendToken(token, cookiedict, track, headertoken="", postdata=None, getdata=None):
     if not postdata:
         postdata = config['argvals']['postData']
+    if not getdata:
+        getdata = config['argvals']['getData']
     url = config['argvals']['targetUrl']
     headers = {'User-agent': config['customising']['useragent']+" "+track}
     if headertoken:
@@ -164,12 +167,16 @@ def sendToken(token, cookiedict, track, headertoken="", postdata=None):
         if config['services']['proxy'] == "False":
             if postdata:
                 response = requests.post(url, data=postdata, headers=headers, cookies=cookiedict, proxies=False, verify=False, allow_redirects=redirBool)
+            elif getdata:
+                response = requests.get(url + getdata, headers=headers, cookies=cookiedict, proxies=False, verify=False, allow_redirects=redirBool)
             else:
                 response = requests.get(url, headers=headers, cookies=cookiedict, proxies=False, verify=False, allow_redirects=redirBool)
         else:
             proxies = {'http': 'http://'+config['services']['proxy'], 'https': 'http://'+config['services']['proxy']}
             if postdata:
                 response = requests.post(url, data=postdata, headers=headers, cookies=cookiedict, proxies=proxies, verify=False, allow_redirects=redirBool)
+            elif getdata:
+                response = requests.get(url + getdata, headers=headers, cookies=cookiedict, proxies=proxies, verify=False, allow_redirects=redirBool)
             else:
                 response = requests.get(url, headers=headers, cookies=cookiedict, proxies=proxies, verify=False, allow_redirects=redirBool)
         if int(response.elapsed.total_seconds()) >= 9:
@@ -236,6 +243,10 @@ def jwtOut(token, fromMod, desc=""):
         else:
             posttoken = [config['argvals']['postdata'],0]
 
+        if config['argvals']['headerloc'] == "getdata":
+            gettoken = p.subn(token, config['argvals']['getData'], 0)
+        else:
+            gettoken = [config['argvals']['getData'],0]
 
         try:
             cookiedict = parse_dict_cookies(cookietoken[0])
@@ -245,11 +256,11 @@ def jwtOut(token, fromMod, desc=""):
 
 
         # Check if token was included in substitution
-        if cookietoken[1] == 1 or headertoken[1] == 1 or posttoken[1]:
-            resData = sendToken(token, cookiedict, logID, headertoken[0], posttoken[0])
+        if cookietoken[1] == 1 or headertoken[1] == 1 or posttoken[1] or gettoken:
+            resData = sendToken(token, cookiedict, logID, headertoken[0], posttoken[0], gettoken[0])
         else:
             if config['argvals']['overridesub'] == "true":
-                resData = sendToken(token, cookiedict, logID, headertoken[0], posttoken[0])
+                resData = sendToken(token, cookiedict, logID, headertoken[0], posttoken[0], gettoken[0])
             else:
                 cprintc("[-] No substitution occurred - check that a token is included in a cookie/header in the request", "red")
                 # cprintc(headertoken, cookietoken, "cyan")
@@ -1865,6 +1876,8 @@ if __name__ == '__main__':
                         help="request cookies to send with the forged HTTP request")
     parser.add_argument("-rh", "--headers", action="append",
                         help="request headers to send with the forged HTTP request (can be used multiple times for additional headers)")
+    parser.add_argument("-gd", "--getdata", action="store",
+                        help="text string that contains all the data to be sent in a GET request")
     parser.add_argument("-pd", "--postdata", action="store",
                         help="text string that contains all the data to be sent in a POST request")
     parser.add_argument("-cv", "--canaryvalue", action="store",
@@ -2016,7 +2029,7 @@ if __name__ == '__main__':
             cprintc("Error: could not handle rate argument", "red")
             exit(1)
     if args.targeturl:
-        if args.cookies or args.headers or args.postdata:
+        if args.cookies or args.headers or args.postdata or args.getdata:
             jwt_count = 0
             jwt_locations = []
 
@@ -2032,8 +2045,12 @@ if __name__ == '__main__':
                 jwt_count += 1
                 jwt_locations.append("post data")
 
+            if args.getdata and re.search(r'eyJ[A-Za-z0-9_\/+-]*\.eyJ[A-Za-z0-9_\/+-]*\.[A-Za-z0-9._\/+-]*', str(args.getdata)):
+                jwt_count += 1
+                jwt_locations.append("get data")
+
             if jwt_count > 1:
-                cprintc("Too many tokens! JWT in more than one place: cookie, header, POST data", "red")
+                cprintc("Too many tokens! JWT in more than one place: cookie, header, POST data, or GET data", "red")
                 exit(1)
 
             if args.cookies:
@@ -2060,10 +2077,19 @@ if __name__ == '__main__':
                     cprintc("Invalid postdata formatting", "red")
                     exit(1)
 
+            if args.getdata:
+                try:
+                    if re.search(r'eyJ[A-Za-z0-9_\/+-]*\.eyJ[A-Za-z0-9_\/+-]*\.[A-Za-z0-9._\/+-]*', str(args.getdata)):
+                        config['argvals']['headerloc'] = "getdata"
+                except:
+                    cprintc("Invalid getdata formatting", "red")
+                    exit(1)
+
             searchString = " | ".join([
                 str(args.cookies),
                 str(args.headers),
-                str(args.postdata)
+                str(args.postdata),
+                str(args.getdata)
             ])
             
             try:
@@ -2138,6 +2164,8 @@ if __name__ == '__main__':
         config['argvals']['headervalue'] = str(args.headervalue)
     if args.postdata:
         config['argvals']['postData'] = args.postdata.replace('%', '%%')
+    if args.getdata:
+        config['argvals']['getData'] = args.getdata.replace('%', '%%')
     if args.canaryvalue:
         config['argvals']['canaryvalue'] = args.canaryvalue
     if args.noproxy:
