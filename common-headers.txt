@@ -1,7 +1,10 @@
-typ
-jku
-kid
-x5u
-x5t
+crit
 cty
+jku
+jwk
+kid
+typ
 x5c
+x5t
+x5t#S256
+x5u
